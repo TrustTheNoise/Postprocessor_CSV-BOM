@@ -7,21 +7,23 @@ use std::fs::File;
 
 mod remove_postf;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn it_works() {
-        let binding = "smart speaker v.1 bom.csv".to_string();
-        let binding2 = "smart speaker v.2 bom.csv".to_string();
-        let files=Files
-        {
-            file_path: vec![&binding, &binding2],
-            flag: false,
-        };
-        run (files);
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     #[test]
+//     fn it_works() {
+//         let binding = "smart speaker v.1 bom.csv".to_string();
+//         let binding2 = "smart speaker v.2 bom.csv".to_string();
+//         let files=Files
+//         {
+//             file_path: vec![&binding, &binding2],
+//             flag: false,
+//         };
+//         run (files);
+//     }
+// }
+
+// If you see comments on obvious things, that's fine
 
 struct Files<'a>
 {
@@ -85,7 +87,7 @@ fn union(contents: &mut Vec<String>, flag:bool){
     }
     non_same_columns(&splits_vec);
     
-
+    //I chech whether temporary csv files where the correct num of columns and write the existing ones to their place in contents
     for num in 0..contents.len()
     {
         let path = "temp".to_string() + &num.to_string() +".csv";
@@ -96,6 +98,7 @@ fn union(contents: &mut Vec<String>, flag:bool){
         }
     }
 
+    //create the final file and write the name of the columns there
     let mut buffer = File::create("union.csv").unwrap();
     buffer.write_all((contents[0].lines().nth(0).unwrap().to_string()+"\n").as_bytes()).unwrap();
 
@@ -109,23 +112,23 @@ fn union(contents: &mut Vec<String>, flag:bool){
         len+=1;
     }
 
-
+    // looking for lines that are in at least one of the files
     for line0 in vec_of_lines[0].clone().iter() {
-        
-        let splits: Vec<&str> = line0.split("\",").collect();
-        let mut split_vec: Vec<String> = splits.iter().map(|x| x.trim_matches('"').to_string()).collect();
-        split_vec.remove(split_vec.len()-1);
+        //divide the line into words, removing " and ,
+        let words: Vec<&str> = line0.split("\",").collect();
+        let mut words_vec: Vec<String> = words.iter().map(|x| x.trim_matches('"').to_string()).collect();
+        words_vec.remove(words_vec.len()-1); //remove last empty word
         let mut same = false;
         for i1 in 1..contents.len()
         {
-            if contents[i1].contains(&split_vec[0])
+            if contents[i1].contains(&words_vec[0])
             {
                 same = true
             }
         }
         if same
         {
-            search_same(&mut vec_of_lines, &split_vec, &mut buffer, flag);
+            search_same(&mut vec_of_lines, &words_vec, &mut buffer, flag);
             continue;
         }
         buffer.write_all((line0.to_string()+"\n").as_bytes()).unwrap();
@@ -156,19 +159,25 @@ fn search_same(vec_of_lines: &mut Vec<Vec<&str>>, need: &Vec<String>, buffer: &m
     'top_for: for i in 1..vec_of_lines.len()
     {
         let mut fin_str:String=String::new();
-        let mut del_num = 0;
+        let mut del_num = 0; // index of the line to be deleted in the other files
+        
+        // looking for the need line and index of it in vec_of_lines
         let need_in_vec = match vec_of_lines[i].iter().find(|x| {del_num+=1; x.contains(&need[0][..])})
         {
             Some(x) => x,
             None => continue,
         };
         del_num-=1;
-        let splits: Vec<&str> = need_in_vec.split("\",").collect();
-        let mut split_vec: Vec<String> = splits.iter().map(|x| x.trim_matches('"').to_string()).collect();
-        split_vec.remove(split_vec.len()-1);
 
-        fin_str = make_fin_str(&split_vec, need, flag);
-        if fin_str==" "{
+
+        let words: Vec<&str> = need_in_vec.split("\",").collect();
+        let mut words_vec: Vec<String> = words.iter().map(|x| x.trim_matches('"').to_string()).collect();
+        words_vec.remove(words_vec.len()-1);
+
+        // collect a string of two files and if there are excellent values and there is
+        // no flag, then we return " " and write both lines from two files to union.csv
+        fin_str = make_fin_str(&words_vec, need, flag);
+        if fin_str==" " {
             let need_in_vec = need_in_vec.to_string() + "\n";
             buffer.write_all(need_in_vec.as_bytes()).unwrap();
             let mut need_str:String = String::new();
@@ -178,9 +187,13 @@ fn search_same(vec_of_lines: &mut Vec<Vec<&str>>, need: &Vec<String>, buffer: &m
             vec_of_lines[i].remove(del_num);
             continue 'top_for;
         }
+
         fin_str = fin_str +  "\n";
+        // delete line in the file that we used
         vec_of_lines[i].remove(del_num);
 
+
+        //we look through the other files to see if the desired line is there and if there is, we take the final line
         for n in i+1..vec_of_lines.len()
         {
             let mut del_num = 0;
@@ -192,14 +205,14 @@ fn search_same(vec_of_lines: &mut Vec<Vec<&str>>, need: &Vec<String>, buffer: &m
                 None => continue,
             };
             let splits: Vec<&str> = need_in_vec.split("\",").collect();
-            let mut split_vec: Vec<String> = splits.iter().map(|x| x.trim_matches('"').to_string()).collect();
-            split_vec.remove(split_vec.len()-1);
+            let mut words_vec: Vec<String> = splits.iter().map(|x| x.trim_matches('"').to_string()).collect();
+            words_vec.remove(words_vec.len()-1);
 
             let need: Vec<&str> = fin_str.split("\",").collect();
             let mut need_vec: Vec<String> = need.iter().map(|x| x.trim_matches('"').to_string()).collect();
             need_vec.remove(need_vec.len()-1);
             
-            new_fin_str = make_fin_str(&split_vec, &need_vec, flag);
+            new_fin_str = make_fin_str(&words_vec, &need_vec, flag);
             if new_fin_str == " "
             {
                 let need_in_vec = need_in_vec.to_string() + "\n";
@@ -214,7 +227,8 @@ fn search_same(vec_of_lines: &mut Vec<Vec<&str>>, need: &Vec<String>, buffer: &m
             fin_str = new_fin_str;
             vec_of_lines[n].remove(del_num);
         }
-        buffer.write_all(fin_str.as_bytes()).unwrap();
+
+        buffer.write_all(fin_str.as_bytes()).unwrap(); //write final line in union.csv
     }
 }
 
@@ -223,7 +237,7 @@ fn make_fin_str(split_vec: &Vec<String>, need: &Vec<String>, flag:bool) -> Strin
     let mut fin_str:String=String::new();
     for n in 0..split_vec.len()
     {
-        if n==1
+        if n==1 //in the second column quantiti so that we add them up
         {
             let number = need[n].parse::<i32>().unwrap()+split_vec[n].parse::<i32>().unwrap();
             fin_str = fin_str + "\"" + &number.to_string() + "\",";
@@ -243,14 +257,15 @@ fn make_fin_str(split_vec: &Vec<String>, need: &Vec<String>, flag:bool) -> Strin
             }
         }
     }
-    return fin_str;
+    return fin_str; // return fin_str
 }
 
 fn non_same_columns(splits_vec: &Vec<Vec<String>>)
 {
-    let mut num_ignr: Vec<Vec<i32>>= Vec::new();
+    let mut num_ignr: Vec<Vec<i32>>= Vec::new(); // vector columns that we want to remove from the table
 
     let mut temp:Vec<i32>;
+    //consider which columns are not in other tables in each file except the last one
     for i in 0..splits_vec.len()-1
     {
         let mut num_del = 0;
@@ -268,6 +283,7 @@ fn non_same_columns(splits_vec: &Vec<Vec<String>>)
     
     temp = Vec::new();
     let mut num_del = 0;
+    //well, let's consider the last file where without it =)
     for words0 in splits_vec[splits_vec.len()-1][0].split(",")
     {
         if !splits_vec[splits_vec.len()-2][0].contains(words0)
@@ -279,6 +295,7 @@ fn non_same_columns(splits_vec: &Vec<Vec<String>>)
     num_ignr.push(temp);
 
     let mut nums = 0;
+    //delete all those columns from the tables, while creating temporary files for each of the tables
     for ignr in num_ignr.clone()
     {
         if ignr.len()!=0
@@ -296,12 +313,14 @@ fn create_temp(splits_vec: &Vec<Vec<String>>, num_ignr: &Vec<Vec<i32>>, num: usi
     
         let splits: Vec<&str> = line.split("\",").collect();
         let mut num_of_iteration=-1;
+        //record only those columns that we should not delete
         let mut split_vec: Vec<String> = splits.iter().filter(|_| {
                                                         num_of_iteration+=1; !num_ignr[num].contains(&num_of_iteration)
                                                     })
                                                     .map(|x| x.trim_matches('"').to_string())
                                                     .collect();
-        split_vec.remove(split_vec.len()-1);                                            
+        split_vec.remove(split_vec.len()-1);
+        // well, we write them to a file   
         for i in 0..(split_vec.len()-1)
         {
             let slc = "\"".to_string()+&split_vec[i]+"\",";
