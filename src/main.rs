@@ -112,8 +112,9 @@ fn run(files: Files, output:bool) {
 }
 
 fn union(mut buffer: File, contents: &mut Vec<String>, flag:bool){
-    let mut splits_vec: Vec<Vec<String>> = Vec::new();
+    let mut lines_vec: Vec<Vec<String>> = Vec::new();
 
+    //arrange the tables in ascending order of the number of columns
     for i in 0..contents.len()-1{
         for j in i+1..contents.len(){
             if contents[i].lines().nth(0).unwrap().split(',').count() < contents[j].lines().nth(0).unwrap().split(',').count(){
@@ -122,6 +123,7 @@ fn union(mut buffer: File, contents: &mut Vec<String>, flag:bool){
         }
     }
 
+    //collect rows from each table into a vector
     for i in 0..contents.len()
     {
         let mut spl: Vec<String> = Vec::new();
@@ -129,12 +131,13 @@ fn union(mut buffer: File, contents: &mut Vec<String>, flag:bool){
         {
             spl.push(line.to_string());
         }
-        splits_vec.push(spl.clone());
+        lines_vec.push(spl.clone());
     }
 
+    //remove unnecessary columns and write them to the vector
+    let mut vec_of_lines = non_same_columns(&lines_vec);
 
-    let mut vec_of_lines = non_same_columns(&splits_vec);
-
+    //write the name of the columns to the final file
     buffer.write_all((vec_of_lines[0][0].clone()+"\n").as_bytes()).unwrap();
 
     for i in 0..vec_of_lines.len(){
@@ -167,7 +170,7 @@ fn union(mut buffer: File, contents: &mut Vec<String>, flag:bool){
 
     }
 
-
+    //we write down the remaining rows from the last table
     for line1 in vec_of_lines[vec_of_lines.len()-1].iter() {
         buffer.write_all((line1.to_string()+"\n").as_bytes()).unwrap();
     }
