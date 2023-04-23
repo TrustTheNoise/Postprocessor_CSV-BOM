@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-use std::{fs, vec};
+use std::{fs, vec, io};
 use std::path::Path;
 use std::env;
 use std::io::prelude::*;
@@ -7,21 +7,22 @@ use std::fs::File;
 
 mod remove_postf;
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     #[test]
-//     fn it_works() {
-//         let binding = "smart speaker v.1 bom.csv".to_string();
-//         let binding2 = "smart speaker v.2 bom.csv".to_string();
-//         let files=Files
-//         {
-//             file_path: vec![&binding, &binding2],
-//             flag: false,
-//         };
-//         run (files);
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn it_works() {
+        let binding3 = "example2.csv".to_string();
+        let binding = "smart speaker v.1 bom.csv".to_string();
+        let binding2 = "smart speaker v.2 bom.csv".to_string();
+        let files=Files
+        {
+            file_path: vec![&binding3, &binding2, &binding],
+            flag: false,
+        };
+        run (files);
+    }
+}
 
 // If you see comments on obvious things, that's fine
 
@@ -30,6 +31,7 @@ struct Files<'a>
     file_path: Vec<&'a String>,
     flag: bool
 }
+
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -43,7 +45,8 @@ fn main() {
         files.file_path.push(&args[i]);
     }
 
-    if args[args.len()-1]=="-f"
+
+    if args.contains(&"-f".to_string())
     {
         files.flag = true;
     }else
@@ -53,7 +56,6 @@ fn main() {
     run(files);
 }
 
-
 fn run(files: Files) {
     let mut contents: Vec<String> = Vec::new();
 
@@ -62,20 +64,46 @@ fn run(files: Files) {
         contents.push(fs::read_to_string(files.file_path[i])
                         .expect("Should have been able to read the file"));
     }
+    let mut name_of_file = String::new();
     
-    union(&mut contents, files.flag);
+    println!("\nWrite name of the union file:");
+    io::stdin()
+        .read_line(&mut name_of_file)
+        .expect("Failed to read line");
+    let mut fin_name = name_of_file.trim().to_string();
+    let mut file_num=1;
+
+    while Path::new(&(fin_name.clone() + ".csv")).exists()
+    {
+        fin_name = name_of_file.trim().to_string() + &file_num.to_string();
+        file_num += 1;
+    }
+    fin_name = fin_name + ".csv";
+    let buffer = File::create(&fin_name).unwrap();
+
+    union(buffer, &mut contents, files.flag);
+
     print!("Files ");
     for i in 0..files.file_path.len()
     {
         print!("\"{}\" ", files.file_path[i]);
     }
-    println!("union in \"union.csv\"");
+    println!("union in \"{}\"", fin_name);
 
-    remove_postf::remove_postfix(fs::read_to_string("union.csv").unwrap());
+    remove_postf::remove_postfix(fin_name);
 }
 
-fn union(contents: &mut Vec<String>, flag:bool){
+fn union(mut buffer: File, contents: &mut Vec<String>, flag:bool){
     let mut splits_vec: Vec<Vec<String>> = Vec::new();
+
+    for i in 0..contents.len()-1{
+        for j in i+1..contents.len(){
+            if contents[i].lines().nth(0).unwrap().split(',').count() < contents[j].lines().nth(0).unwrap().split(',').count(){
+                contents.swap(j, i);
+            } 
+        }
+    }
+
     for i in 0..contents.len()
     {
         let mut spl: Vec<String> = Vec::new();
@@ -85,78 +113,53 @@ fn union(contents: &mut Vec<String>, flag:bool){
         }
         splits_vec.push(spl.clone());
     }
-    non_same_columns(&splits_vec);
-    
-    //I chech whether temporary csv files where the correct num of columns and write the existing ones to their place in contents
-    for num in 0..contents.len()
-    {
-        let path = "temp".to_string() + &num.to_string() +".csv";
-        if Path::new(&path).exists()
-        {
-            contents[num] = fs::read_to_string(&path)
-                            .expect("Should have been able to read the file");
-        }
+
+
+    let mut vec_of_lines = non_same_columns(&splits_vec);
+
+    buffer.write_all((vec_of_lines[0][0].clone()+"\n").as_bytes()).unwrap();
+
+    for i in 0..vec_of_lines.len(){
+        vec_of_lines[i].remove(0);
     }
 
-    //create the final file and write the name of the columns there
-    let mut buffer = File::create("union.csv").unwrap();
-    buffer.write_all((contents[0].lines().nth(0).unwrap().to_string()+"\n").as_bytes()).unwrap();
+    for i in 0..vec_of_lines.len()-1{
 
-    let mut vec_of_lines:Vec<Vec<&str>> = Vec::new();
-
-    let mut len = 0;
-    for cont in contents.iter()
-    {
-        vec_of_lines.push(cont.lines().into_iter().collect());
-        vec_of_lines[len].remove(0);
-        len+=1;
-    }
-
-    // looking for lines that are in at least one of the files
-    for line0 in vec_of_lines[0].clone().iter() {
-        //divide the line into words, removing " and ,
-        let words: Vec<&str> = line0.split("\",").collect();
-        let mut words_vec: Vec<String> = words.iter().map(|x| x.trim_matches('"').to_string()).collect();
-        words_vec.remove(words_vec.len()-1); //remove last empty word
-        let mut same = false;
-        for i1 in 1..contents.len()
-        {
-            if contents[i1].contains(&words_vec[0])
+        // looking for lines that are in at least one of the files
+        for line0 in vec_of_lines[i].clone().iter() {
+            //divide the line into words, removing " and ,
+            let words: Vec<&str> = line0.split("\",").collect();
+            let mut words_vec: Vec<String> = words.iter().map(|x| x.trim_matches('"').to_string()).collect();
+            words_vec.remove(words_vec.len()-1); //remove last empty word
+            let mut same = false;
+            for i1 in i+1..contents.len()
             {
-                same = true
+                if contents[i1].contains(&words_vec[0])
+                {
+                    same = true
+                }
             }
+            if same
+            {
+                search_same(&mut vec_of_lines, i, &words_vec, &mut buffer, flag);
+                continue;
+            }
+            buffer.write_all((line0.to_string()+"\n").as_bytes()).unwrap();
         }
-        if same
-        {
-            search_same(&mut vec_of_lines, &words_vec, &mut buffer, flag);
-            continue;
-        }
-        buffer.write_all((line0.to_string()+"\n").as_bytes()).unwrap();
+
     }
 
 
-    for i in 1..vec_of_lines.len()
-    {
-        for line1 in vec_of_lines[i].iter() {
-            buffer.write_all((line1.to_string()+"\n").as_bytes()).unwrap();
-        }
-    }
-
-    for num in 0..vec_of_lines.len()
-    {
-        let path = "temp".to_string() + &num.to_string() +".csv";
-        if Path::new(&path).exists()
-        {
-            fs::remove_file(&path).unwrap();
-        }
+    for line1 in vec_of_lines[vec_of_lines.len()-1].iter() {
+        buffer.write_all((line1.to_string()+"\n").as_bytes()).unwrap();
     }
 
 }
 
 #[allow(unused_assignments)]
-fn search_same(vec_of_lines: &mut Vec<Vec<&str>>, need: &Vec<String>, buffer: &mut File, flag:bool)
+fn search_same(vec_of_lines: &mut Vec<Vec<String>>, num:usize, need: &Vec<String>, buffer: &mut File, flag:bool)
 {
-    'top_for: for i in 1..vec_of_lines.len()
+    'top_for: for i in num+1..vec_of_lines.len()
     {
         let mut fin_str:String=String::new();
         let mut del_num = 0; // index of the line to be deleted in the other files
@@ -260,73 +263,70 @@ fn make_fin_str(split_vec: &Vec<String>, need: &Vec<String>, flag:bool) -> Strin
     return fin_str; // return fin_str
 }
 
-fn non_same_columns(splits_vec: &Vec<Vec<String>>)
+fn non_same_columns(splits_vec: &Vec<Vec<String>>) -> Vec<Vec<String>>
 {
     let mut num_ignr: Vec<Vec<i32>>= Vec::new(); // vector columns that we want to remove from the table
 
     let mut temp:Vec<i32>;
     //consider which columns are not in other tables in each file except the last one
-    for i in 0..splits_vec.len()-1
+    for i in 0..splits_vec.len()
     {
         let mut num_del = 0;
         temp=Vec::new();
-        for words0 in splits_vec[i][0].split(",")
-        {
-            if !splits_vec[i+1][0].contains(words0)
+        for j in i+1..splits_vec.len(){
+            for words0 in splits_vec[i][0].split(",")
             {
-                temp.push(num_del);
+                if !splits_vec[j][0].contains(words0)
+                {
+                    temp.push(num_del);
+                }
+                num_del+=1;
             }
-            num_del+=1;
+            num_del=0;
         }
         num_ignr.push(temp.clone());
     }
-    
-    temp = Vec::new();
-    let mut num_del = 0;
-    //well, let's consider the last file where without it =)
-    for words0 in splits_vec[splits_vec.len()-1][0].split(",")
-    {
-        if !splits_vec[splits_vec.len()-2][0].contains(words0)
-        {
-            temp.push(num_del);
-        }
-        num_del+=1;
-    }
-    num_ignr.push(temp);
 
-    let mut nums = 0;
     //delete all those columns from the tables, while creating temporary files for each of the tables
-    for ignr in num_ignr.clone()
-    {
-        if ignr.len()!=0
-        {
-            create_temp(splits_vec, &num_ignr, nums);
-        }
-        nums+=1;
-    }
+    return del_non_same_columns(splits_vec, &num_ignr);
 }
 
-fn create_temp(splits_vec: &Vec<Vec<String>>, num_ignr: &Vec<Vec<i32>>, num: usize)
+fn del_non_same_columns(splits_vec: &Vec<Vec<String>>, num_ignr: &Vec<Vec<i32>>) -> Vec<Vec<String>>
 {
-    let mut buffer = File::create("temp".to_string()+&num.to_string()+".csv").unwrap();
-    for line in splits_vec[num].iter() {
-    
-        let splits: Vec<&str> = line.split("\",").collect();
-        let mut num_of_iteration=-1;
-        //record only those columns that we should not delete
-        let mut split_vec: Vec<String> = splits.iter().filter(|_| {
-                                                        num_of_iteration+=1; !num_ignr[num].contains(&num_of_iteration)
-                                                    })
-                                                    .map(|x| x.trim_matches('"').to_string())
-                                                    .collect();
-        split_vec.remove(split_vec.len()-1);
-        // well, we write them to a file   
-        for i in 0..(split_vec.len()-1)
-        {
-            let slc = "\"".to_string()+&split_vec[i]+"\",";
-            buffer.write_all(slc.as_bytes()).unwrap();
+    let mut new_csv_vec: Vec<Vec<String>> = Vec::new();
+    for index_ignr in 0..num_ignr.len(){
+
+        let mut new_file: Vec<String>=Vec::new();
+        if num_ignr[index_ignr].len()!=0{
+
+            for line in splits_vec[index_ignr].iter() {
+            
+                let splits: Vec<&str> = line.split("\",").collect();
+                let mut num_of_iteration=-1;
+                //record only those columns that we should not delete
+                let mut split_vec: Vec<String> = splits.iter().filter(|_| {
+                                                                num_of_iteration+=1; !num_ignr[index_ignr].contains(&num_of_iteration)
+                                                            })
+                                                            .map(|x| x.trim_matches('"').to_string())
+                                                            .collect();                                    
+                split_vec.remove(split_vec.len()-1);
+                let mut slc = String::new();
+                // well, we write them to a file   
+                for i in 0..(split_vec.len()-1)
+                {
+                    slc = slc + "\""+&split_vec[i]+"\",";
+                }
+        
+                slc = slc + "\"" + &split_vec[split_vec.len()-1]+"\",";
+                new_file.push(slc);
+            }
+
+        }else{
+            new_csv_vec.push(splits_vec[index_ignr].clone());
+            continue;
         }
-        let slc = "\"".to_string() + &split_vec[split_vec.len()-1]+"\",\n";
-        buffer.write_all(slc.as_bytes()).unwrap();
+        new_csv_vec.push(new_file)
+
     }
+    return new_csv_vec;
 }
