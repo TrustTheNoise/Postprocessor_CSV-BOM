@@ -1,9 +1,11 @@
 #![allow(non_snake_case)]
+use std::process::exit;
 use std::{fs, vec, io};
 use std::path::Path;
 use std::env;
 use std::io::prelude::*;
 use std::fs::File;
+use colored::*;
 
 mod remove_postf;
 
@@ -20,7 +22,7 @@ mod tests {
             file_path: vec![&binding3, &binding2, &binding],
             flag: false,
         };
-        run (files);
+        run (files, true);
     }
 }
 
@@ -35,28 +37,44 @@ struct Files<'a>
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    let mut output = true;
     let mut files = Files{
         file_path: vec![],
         flag: false,
     };
 
-    for i in 1..args.len()-1
+    for i in 1..args.len()
     {
+        if args[i]=="-f"
+        {
+            files.flag = true;
+            continue;
+        }
+        if args[i]=="-wo"{
+            output=false;
+            continue;
+        }
+        if args[i]=="-h"{
+            println!("This is a program for compiling one common specification for several projects. Two or more files of the format are 
+submitted to the input .csv and at the output we get a file format .csv with the general specification. 
+In this case, all postfixes will be deleted and (if desired) displayed when deleted.
+
+Flags:
+{} if the flag is {} - if different data is specified in the same columns for the same elements, these elements are added to the output table in separate rows
+if the flag is {}, even if different data is specified in the same columns for the same elements, the elements must be combined into one row, and the field where the conflict occurs should be replaced with the “Forced merge” line
+ 
+{} if the flag is specified, then deleted postfixes will not be output to the terminal
+
+{} outputs this message to the terminal", "-f".to_string().yellow(), "not specified".to_string().red(), "specified".to_string().red(), "-wo".to_string().yellow(), "-h".to_string().yellow());
+            exit(0);
+        }
         files.file_path.push(&args[i]);
     }
 
-
-    if args.contains(&"-f".to_string())
-    {
-        files.flag = true;
-    }else
-    {
-        files.file_path.push(&args[args.len()-1]);
-    }
-    run(files);
+    run(files, output);
 }
 
-fn run(files: Files) {
+fn run(files: Files, output:bool) {
     let mut contents: Vec<String> = Vec::new();
 
     for i in 0..files.file_path.len()
@@ -90,7 +108,7 @@ fn run(files: Files) {
     }
     println!("union in \"{}\"", fin_name);
 
-    remove_postf::remove_postfix(fin_name);
+    remove_postf::remove_postfix(fin_name, output);
 }
 
 fn union(mut buffer: File, contents: &mut Vec<String>, flag:bool){
@@ -155,6 +173,75 @@ fn union(mut buffer: File, contents: &mut Vec<String>, flag:bool){
     }
 
 }
+
+fn non_same_columns(splits_vec: &Vec<Vec<String>>) -> Vec<Vec<String>>
+{
+    let mut num_ignr: Vec<Vec<i32>>= Vec::new(); // vector columns that we want to remove from the table
+
+    let mut temp:Vec<i32>;
+    //consider which columns are not in other tables in each file except the last one
+    for i in 0..splits_vec.len()
+    {
+        let mut num_del = 0;
+        temp=Vec::new();
+        for j in i+1..splits_vec.len(){
+            for words0 in splits_vec[i][0].split(",")
+            {
+                if !splits_vec[j][0].contains(words0)
+                {
+                    temp.push(num_del);
+                }
+                num_del+=1;
+            }
+            num_del=0;
+        }
+        num_ignr.push(temp.clone());
+    }
+
+    //delete all those columns from the tables, while creating temporary files for each of the tables
+    return del_non_same_columns(splits_vec, &num_ignr);
+}
+
+fn del_non_same_columns(splits_vec: &Vec<Vec<String>>, num_ignr: &Vec<Vec<i32>>) -> Vec<Vec<String>>
+{
+    let mut new_csv_vec: Vec<Vec<String>> = Vec::new();
+    for index_ignr in 0..num_ignr.len(){
+
+        let mut new_file: Vec<String>=Vec::new();
+        if num_ignr[index_ignr].len()!=0{
+
+            for line in splits_vec[index_ignr].iter() {
+            
+                let splits: Vec<&str> = line.split("\",").collect();
+                let mut num_of_iteration=-1;
+                //record only those columns that we should not delete
+                let mut split_vec: Vec<String> = splits.iter().filter(|_| {
+                                                                num_of_iteration+=1; !num_ignr[index_ignr].contains(&num_of_iteration)
+                                                            })
+                                                            .map(|x| x.trim_matches('"').to_string())
+                                                            .collect();                                    
+                split_vec.remove(split_vec.len()-1);
+                let mut slc = String::new();
+                // well, we write them to a file   
+                for i in 0..(split_vec.len()-1)
+                {
+                    slc = slc + "\""+&split_vec[i]+"\",";
+                }
+        
+                slc = slc + "\"" + &split_vec[split_vec.len()-1]+"\",";
+                new_file.push(slc);
+            }
+
+        }else{
+            new_csv_vec.push(splits_vec[index_ignr].clone());
+            continue;
+        }
+        new_csv_vec.push(new_file)
+
+    }
+    return new_csv_vec;
+}
+
 
 #[allow(unused_assignments)]
 fn search_same(vec_of_lines: &mut Vec<Vec<String>>, num:usize, need: &Vec<String>, buffer: &mut File, flag:bool)
@@ -261,72 +348,4 @@ fn make_fin_str(split_vec: &Vec<String>, need: &Vec<String>, flag:bool) -> Strin
         }
     }
     return fin_str; // return fin_str
-}
-
-fn non_same_columns(splits_vec: &Vec<Vec<String>>) -> Vec<Vec<String>>
-{
-    let mut num_ignr: Vec<Vec<i32>>= Vec::new(); // vector columns that we want to remove from the table
-
-    let mut temp:Vec<i32>;
-    //consider which columns are not in other tables in each file except the last one
-    for i in 0..splits_vec.len()
-    {
-        let mut num_del = 0;
-        temp=Vec::new();
-        for j in i+1..splits_vec.len(){
-            for words0 in splits_vec[i][0].split(",")
-            {
-                if !splits_vec[j][0].contains(words0)
-                {
-                    temp.push(num_del);
-                }
-                num_del+=1;
-            }
-            num_del=0;
-        }
-        num_ignr.push(temp.clone());
-    }
-
-    //delete all those columns from the tables, while creating temporary files for each of the tables
-    return del_non_same_columns(splits_vec, &num_ignr);
-}
-
-fn del_non_same_columns(splits_vec: &Vec<Vec<String>>, num_ignr: &Vec<Vec<i32>>) -> Vec<Vec<String>>
-{
-    let mut new_csv_vec: Vec<Vec<String>> = Vec::new();
-    for index_ignr in 0..num_ignr.len(){
-
-        let mut new_file: Vec<String>=Vec::new();
-        if num_ignr[index_ignr].len()!=0{
-
-            for line in splits_vec[index_ignr].iter() {
-            
-                let splits: Vec<&str> = line.split("\",").collect();
-                let mut num_of_iteration=-1;
-                //record only those columns that we should not delete
-                let mut split_vec: Vec<String> = splits.iter().filter(|_| {
-                                                                num_of_iteration+=1; !num_ignr[index_ignr].contains(&num_of_iteration)
-                                                            })
-                                                            .map(|x| x.trim_matches('"').to_string())
-                                                            .collect();                                    
-                split_vec.remove(split_vec.len()-1);
-                let mut slc = String::new();
-                // well, we write them to a file   
-                for i in 0..(split_vec.len()-1)
-                {
-                    slc = slc + "\""+&split_vec[i]+"\",";
-                }
-        
-                slc = slc + "\"" + &split_vec[split_vec.len()-1]+"\",";
-                new_file.push(slc);
-            }
-
-        }else{
-            new_csv_vec.push(splits_vec[index_ignr].clone());
-            continue;
-        }
-        new_csv_vec.push(new_file)
-
-    }
-    return new_csv_vec;
 }

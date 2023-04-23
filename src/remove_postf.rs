@@ -6,7 +6,7 @@ use std::fs::File;
 use regex::Regex;
 
 #[allow(unused_assignments)]
-pub fn remove_postfix(file_name: String){ 
+pub fn remove_postfix(file_name: String, output:bool){ 
     
     let contents=fs::read_to_string(file_name.clone()).expect("Should have been able to read the file");
     let mut line_vec: Vec<String> = Vec::new();
@@ -17,7 +17,9 @@ pub fn remove_postfix(file_name: String){
     
     line_vec = contents.lines().filter(|x| re.is_match(x)).map(|x| x.to_string()).collect();
 
-    find_low_let(line_vec);
+    if output{
+        find_low_let(line_vec);
+    }
     
     let re = Regex::new(r"\s\([a-zA-Z]\)").unwrap();
     let mut contents = re.replace_all(&contents, "").to_string();
